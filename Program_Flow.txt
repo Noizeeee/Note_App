@@ -238,27 +238,3 @@ redirects to /login
 [User's Browser]
 
 ================================================================
-
-
-
-
-
-****************************SERIALIZER FLOW********************************
-React sends POST { username, email, password }
-        ↓
-RegisterSerializer receives raw data
-        ↓
-Checks username is not blank
-Checks email format is valid
-Checks password is at least 8 characters
-        ↓
-If any check fails → returns 400 { "password": ["min 8 characters"] }
-        ↓
-If all pass → validated_data = { username, email, password }
-        ↓
-create() is called
-        ↓
-create_user() hashes password → saves to PostgreSQL via Supabase
-        ↓
-Returns new User object → view sends 201 to React
-****************************************************************************

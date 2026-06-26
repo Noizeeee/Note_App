@@ -1,0 +1,10 @@
+view = A view is the part of Django that receives a request and returns a response. 
+       Think of it as the middleman between the URL and the data
+       
+React sends request
+        ↓
+URL routes to View
+        ↓
+View talks to Serializer + Model
+        ↓
+View sends response back to React

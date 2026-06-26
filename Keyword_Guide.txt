@@ -1,2 +1,0 @@
-CORS = checks URL
-Serializers = allows react to communicate with djang. (Translates native JSON to python object)
