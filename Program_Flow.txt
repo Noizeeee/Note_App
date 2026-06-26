@@ -1,0 +1,264 @@
+================================================================
+                     NOTE APP - COMPLETE FLOW
+================================================================
+
+----------------------------------------------------------------
+1. SIGNUP FLOW
+----------------------------------------------------------------
+
+User fills Signup form { username, email, password }
+        ↓
+React POST /api/auth/register/
+        ↓
+config/urls.py receives request → routes to users/urls.py
+        ↓
+users/urls.py → RegisterView
+        ↓
+RegisterView passes data to RegisterSerializer
+        ↓
+RegisterSerializer validates:
+  - username not blank
+  - email format valid
+  - password min 8 chars
+        ↓
+FAIL → 400 Bad Request { "password": ["min 8 characters"] }
+        ↓
+PASS → create() called
+        ↓
+create_user() hashes password → saves to PostgreSQL (Supabase)
+        ↓
+201 Created { username, email }
+        ↓
+React redirects to /login
+
+
+----------------------------------------------------------------
+2. LOGIN FLOW
+----------------------------------------------------------------
+
+User fills Login form { username, password }
+        ↓
+React POST /api/auth/login/
+        ↓
+config/urls.py → TokenObtainPairView (built into SimpleJWT)
+        ↓
+Django checks username exists in DB
+        ↓
+Django checks hashed password matches
+        ↓
+FAIL → 401 Unauthorized { "detail": "No active account found" }
+        ↓
+PASS → generates two tokens:
+  access token  → expires in 30 mins
+  refresh token → expires in 7 days
+        ↓
+200 OK { access: "xxx", refresh: "xxx" }
+        ↓
+React stores both in localStorage
+        ↓
+AuthContext updates user state
+        ↓
+React redirects to /notes
+
+
+----------------------------------------------------------------
+3. LOAD NOTES FLOW
+----------------------------------------------------------------
+
+User lands on /notes page
+        ↓
+Notes.jsx mounts
+        ↓
+useNotes() hook fires GET /api/notes/
+        ↓
+axios.js interceptor runs:
+  reads access token from localStorage
+  attaches Authorization: Bearer <token> to request header
+        ↓
+config/urls.py → notes/urls.py → NoteViewSet (list action)
+        ↓
+Django validates JWT token:
+  checks signature is valid
+  checks token is not expired
+        ↓
+FAIL → 401 Unauthorized → React redirects to /login
+        ↓
+PASS → get_queryset() runs:
+  Note.objects.filter(user=request.user)
+  only returns notes belonging to logged in user
+        ↓
+NoteSerializer converts notes to JSON
+        ↓
+200 OK [{ id, title, content, created_at }, ...]
+        ↓
+React renders NoteCard list
+
+
+----------------------------------------------------------------
+4. CREATE NOTE FLOW
+----------------------------------------------------------------
+
+User fills NoteForm { title, content } → clicks Save
+        ↓
+React POST /api/notes/
+  Authorization: Bearer <token>
+  body: { title, content }
+        ↓
+axios interceptor attaches token
+        ↓
+NoteViewSet (create action)
+        ↓
+Django validates JWT token
+        ↓
+NoteSerializer validates:
+  - title not blank
+  - content not blank
+        ↓
+FAIL → 400 Bad Request { "title": ["required"] }
+        ↓
+PASS → perform_create() runs:
+  serializer.save(user=request.user)
+  saves note with logged in user as owner
+        ↓
+201 Created { id, title, content, created_at }
+        ↓
+React adds new note to list
+
+
+----------------------------------------------------------------
+5. EDIT NOTE FLOW
+----------------------------------------------------------------
+
+User edits NoteForm { title, content } → clicks Update
+        ↓
+React PUT /api/notes/:id/
+  Authorization: Bearer <token>
+  body: { title, content }
+        ↓
+NoteViewSet (update action)
+        ↓
+Django validates JWT token
+        ↓
+get_queryset() checks:
+  note exists AND note.user == request.user
+        ↓
+FAIL → 404 Not Found (note doesn't exist or belongs to another user)
+        ↓
+PASS → NoteSerializer validates new data
+        ↓
+saves updated note to PostgreSQL
+        ↓
+200 OK { id, title, content, updated_at }
+        ↓
+React updates note in list
+
+
+----------------------------------------------------------------
+6. DELETE NOTE FLOW
+----------------------------------------------------------------
+
+User clicks Delete on a NoteCard
+        ↓
+React DELETE /api/notes/:id/
+  Authorization: Bearer <token>
+        ↓
+NoteViewSet (destroy action)
+        ↓
+Django validates JWT token
+        ↓
+get_queryset() checks:
+  note exists AND note.user == request.user
+        ↓
+FAIL → 404 Not Found
+        ↓
+PASS → note deleted from PostgreSQL
+        ↓
+204 No Content
+        ↓
+React removes note from list
+
+
+----------------------------------------------------------------
+7. TOKEN EXPIRY FLOW
+----------------------------------------------------------------
+
+User makes any API request
+        ↓
+access token is expired (30 mins passed)
+        ↓
+Django returns 401 Unauthorized
+        ↓
+axios interceptor catches 401
+        ↓
+POST /api/auth/refresh/ { refresh: "xxx" }
+        ↓
+FAIL → refresh token also expired (7 days passed)
+  → clear localStorage
+  → redirect to /login
+        ↓
+PASS → 200 OK { access: "new_token" }
+  → store new access token in localStorage
+  → retry original request with new token
+  → user never notices anything happened
+
+
+----------------------------------------------------------------
+8. LOGOUT FLOW
+----------------------------------------------------------------
+
+User clicks Logout
+        ↓
+AuthContext.logout() runs:
+  removes access token from localStorage
+  removes refresh token from localStorage
+  clears user state
+        ↓
+ProtectedRoute detects no token
+        ↓
+redirects to /login
+
+
+================================================================
+                     COMPLETE PICTURE
+================================================================
+
+[Supabase PostgreSQL]
+        ↑ ↓ SQL queries
+[Django Backend]
+  config/         → routes all requests
+  users/          → auth (register, login, tokens)
+  notes/          → CRUD (create, read, update, delete)
+        ↑ ↓ HTTP + JWT
+[React Frontend]
+  AuthContext     → manages token + user state
+  axios.js        → attaches token to every request
+  ProtectedRoute  → blocks unauthenticated access
+  pages/          → UI for login, signup, notes
+        ↑ ↓
+[User's Browser]
+
+================================================================
+
+
+
+
+
+****************************SERIALIZER FLOW********************************
+React sends POST { username, email, password }
+        ↓
+RegisterSerializer receives raw data
+        ↓
+Checks username is not blank
+Checks email format is valid
+Checks password is at least 8 characters
+        ↓
+If any check fails → returns 400 { "password": ["min 8 characters"] }
+        ↓
+If all pass → validated_data = { username, email, password }
+        ↓
+create() is called
+        ↓
+create_user() hashes password → saves to PostgreSQL via Supabase
+        ↓
+Returns new User object → view sends 201 to React
+****************************************************************************
